@@ -15327,6 +15327,11 @@
 		<Unit filename="/home/ott/Documents/code/personal/rocksdb/memtable/memtablerep_bench.cc">
 			<Option target="memtablerep_bench"/>
 		</Unit>
+		<Unit filename="/home/ott/Documents/code/personal/rocksdb/memtable/never_sorted_vector_rep.cc">
+			<Option target="rocksdb"/>
+			<Option target="rocksdb-shared"/>
+			<Option target="testutillib"/>
+		</Unit>
 		<Unit filename="/home/ott/Documents/code/personal/rocksdb/memtable/skiplist_test.cc">
 			<Option target="skiplist_test"/>
 		</Unit>

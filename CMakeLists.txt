@@ -964,7 +964,8 @@ set(SOURCES
         utilities/ttl/db_ttl_impl.cc
         utilities/wal_filter.cc
         utilities/write_batch_with_index/write_batch_with_index.cc
-        utilities/write_batch_with_index/write_batch_with_index_internal.cc)
+        utilities/write_batch_with_index/write_batch_with_index_internal.cc
+        memtable/never_sorted_vector_rep.cc)
 
 list(APPEND SOURCES
   utilities/transactions/lock/range/range_tree/lib/locktree/concurrent_tree.cc
@@ -1514,6 +1515,7 @@ if(WITH_TESTS)
       table/mock_table.cc
       utilities/agg_merge/test_agg_merge.cc
       utilities/cassandra/test_utils.cc
+          memtable/never_sorted_vector_rep.cc
   )
   enable_testing()
   add_custom_target(rocksdb_check COMMAND ${CMAKE_CTEST_COMMAND})
