@@ -384,7 +384,7 @@ TEST_F(FlushJobTest, FlushMemtablesMultipleColumnFamilies) {
     smallest_seqs.push_back(curr_seqno);
     for (size_t i = 0; i != num_memtables[k]; ++i) {
       MemTable* mem = cfd->ConstructNewMemtable(
-          *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
+        *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
       mem->SetID(i);
       mem->Ref();
 
@@ -745,7 +745,7 @@ TEST_P(FlushJobTimestampTest, AllKeysExpired) {
 
   {
     MemTable* new_mem = cfd->ConstructNewMemtable(
-        *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
+      *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
     new_mem->Ref();
     for (int i = 0; i < 100; ++i) {
       uint64_t ts = curr_ts_.fetch_add(1);
@@ -811,7 +811,7 @@ TEST_P(FlushJobTimestampTest, NoKeyExpired) {
 
   {
     MemTable* new_mem = cfd->ConstructNewMemtable(
-        *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
+      *cfd->GetLatestMutableCFOptions(), kMaxSequenceNumber);
     new_mem->Ref();
     for (int i = 0; i < 100; ++i) {
       uint64_t ts = curr_ts_.fetch_add(1);

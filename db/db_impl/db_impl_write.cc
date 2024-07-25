@@ -2263,7 +2263,14 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
   }
   if (s.ok()) {
     SequenceNumber seq = versions_->LastSequence();
-    new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq);
+
+    this->memtable_factory_mutex_.lock_shared();
+    std::optional<MemTableRepFactory*> memtable_factory = this->memtable_factory_ != nullptr
+    ? std::optional(this->memtable_factory_.get())
+      : std::nullopt;
+    new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq, memtable_factory);
+    this->memtable_factory_mutex_.unlock_shared();
+
     context->superversion_context.NewSuperVersion();
 
     ROCKS_LOG_INFO(immutable_db_options_.info_log,

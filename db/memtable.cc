@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -44,6 +45,8 @@
 #include "util/coding.h"
 #include "util/mutexlock.h"
 
+#define LOG(msg) \
+  std::cout << __FILE__ << "(" << __LINE__ << "): " << msg << std::endl
 namespace ROCKSDB_NAMESPACE {
 
 ImmutableMemTableOptions::ImmutableMemTableOptions(
@@ -75,7 +78,8 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                    const ImmutableOptions& ioptions,
                    const MutableCFOptions& mutable_cf_options,
                    WriteBufferManager* write_buffer_manager,
-                   SequenceNumber latest_seq, uint32_t column_family_id)
+                   SequenceNumber latest_seq, uint32_t column_family_id,
+                   std::optional<MemTableRepFactory*> memtable_factory_opt)
     : comparator_(cmp),
       moptions_(ioptions, mutable_cf_options),
       refs_(0),
@@ -88,9 +92,9 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
                  ? &mem_tracker_
                  : nullptr,
              mutable_cf_options.memtable_huge_page_size),
-      table_(ioptions.memtable_factory->CreateMemTableRep(
-          comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
-          ioptions.logger, column_family_id)),
+      // table_(ioptions.memtable_factory->CreateMemTableRep(
+      //     comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
+      //     ioptions.logger, column_family_id)),
       range_del_table_(SkipListFactory().CreateMemTableRep(
           comparator_, &arena_, nullptr /* transform */, ioptions.logger,
           column_family_id)),
@@ -121,6 +125,17 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
       approximate_memory_usage_(0),
       memtable_max_range_deletions_(
           mutable_cf_options.memtable_max_range_deletions) {
+  MemTableRepFactory* mtrf;
+  if (memtable_factory_opt.has_value()) {
+    mtrf = memtable_factory_opt.value();
+  } else {
+    mtrf = ioptions.memtable_factory.get();
+  }
+  LOG(mtrf->Name());
+  this->table_.reset(mtrf->CreateMemTableRep(
+    comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
+    ioptions.logger, column_family_id)
+  );
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());

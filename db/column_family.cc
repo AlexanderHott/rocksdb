@@ -1151,9 +1151,10 @@ uint64_t ColumnFamilyData::GetLiveSstFilesSize() const {
 }
 
 MemTable* ColumnFamilyData::ConstructNewMemtable(
-    const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq) {
+  const MutableCFOptions& mutable_cf_options, SequenceNumber earliest_seq, const std::optional<MemTableRepFactory *>
+  memtable_factory_opt) {
   return new MemTable(internal_comparator_, ioptions_, mutable_cf_options,
-                      write_buffer_manager_, earliest_seq, id_);
+                      write_buffer_manager_, earliest_seq, id_, memtable_factory_opt);
 }
 
 void ColumnFamilyData::CreateNewMemtable(

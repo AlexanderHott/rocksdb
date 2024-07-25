@@ -143,7 +143,7 @@ Status DBImplFollower::TryCatchUpWithLeader() {
           const MutableCFOptions mutable_cf_options =
               *cfd->GetLatestMutableCFOptions();
           MemTable* new_mem = cfd->ConstructNewMemtable(
-              mutable_cf_options, versions_->LastSequence());
+            mutable_cf_options, versions_->LastSequence());
           cfd->mem()->SetNextLogNumber(cfd->GetLogNumber());
           cfd->mem()->ConstructFragmentedRangeTombstones();
           cfd->imm()->Add(cfd->mem(), &job_context.memtables_to_free);

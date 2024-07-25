@@ -13,6 +13,7 @@
 
 #include <map>
 #include <memory>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -173,6 +174,10 @@ using TablePropertiesCollection =
 // and a number of wrapper implementations.
 class DB {
  public:
+  /// Must be syncronized via the `memtable_factory_mutex_` member variable.
+  std::shared_ptr<MemTableRepFactory> memtable_factory_;
+  mutable std::shared_mutex memtable_factory_mutex_;
+
   // Open the database with the specified "name" for reads and writes.
   // Stores a pointer to a heap-allocated database in *dbptr and returns
   // OK on success.
