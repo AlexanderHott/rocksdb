@@ -7,6 +7,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 #include <cinttypes>
+#include <iostream>
 
 #include "db/db_impl/db_impl.h"
 #include "db/error_handler.h"
@@ -16,6 +17,9 @@
 #include "options/options_helper.h"
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
+
+#define LOG(msg) \
+  std::cout << __FILE__ << "(" << __LINE__ << "): " << msg << std::endl
 
 namespace ROCKSDB_NAMESPACE {
 // Convenience methods
@@ -2268,6 +2272,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context) {
     std::optional<MemTableRepFactory*> memtable_factory = this->memtable_factory_ != nullptr
     ? std::optional(this->memtable_factory_.get())
       : std::nullopt;
+    LOG("[SwitchMemtable] " << this->memtable_factory_->Name());
     new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq, memtable_factory);
     this->memtable_factory_mutex_.unlock_shared();
 

@@ -8,6 +8,8 @@
 #include <set>
 #include <type_traits>
 #include <unordered_set>
+#include <chrono>
+#include <iostream>
 
 #include "db/memtable.h"
 #include "memory/arena.h"
@@ -16,6 +18,14 @@
 #include "rocksdb/memtablerep.h"
 #include "rocksdb/utilities/options_type.h"
 #include "util/mutexlock.h"
+
+
+using hrc = std::chrono::high_resolution_clock;
+using ns = std::chrono::nanoseconds;
+using std::chrono::duration_cast;
+
+#define LOG(msg) \
+  std::cout << __FILE__ << "(" << __LINE__ << "): " << msg << std::endl
 
 namespace ROCKSDB_NAMESPACE {
 namespace {
@@ -105,10 +115,15 @@ class VectorRep : public MemTableRep {
 };
 
 void VectorRep::Insert(KeyHandle handle) {
+  // auto start = hrc::now();
+
   auto* key = static_cast<char*>(handle);
   WriteLock l(&rwlock_);
   assert(!immutable_);
   bucket_->push_back(key);
+  // auto duration = duration_cast<ns>(hrc::now() - start);
+
+  // LOG("Time: " << duration.count());
 }
 
 // Returns true iff an entry that compares equal to key is in the collection.
