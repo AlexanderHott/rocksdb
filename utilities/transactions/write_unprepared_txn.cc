@@ -3,7 +3,6 @@
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
 
-
 #include "utilities/transactions/write_unprepared_txn.h"
 
 #include "db/db_impl/db_impl.h"
@@ -395,7 +394,9 @@ Status WriteUnpreparedTxn::FlushWriteBatchToDBInternal(bool prepared) {
   // unprep_seqs_ will also contain prepared seqnos since they are treated in
   // the same way in the prepare/commit callbacks. See the comment on the
   // definition of unprep_seqs_.
-  unprep_seqs_[prepare_seq] = prepare_batch_cnt_;
+  if (s.ok()) {
+    unprep_seqs_[prepare_seq] = prepare_batch_cnt_;
+  }
 
   // Reset transaction state.
   if (!prepared) {
@@ -1077,7 +1078,8 @@ Status WriteUnpreparedTxn::ValidateSnapshot(ColumnFamilyHandle* column_family,
   // TODO(yanqin): Support user-defined timestamp.
   return TransactionUtil::CheckKeyForConflicts(
       db_impl_, cfh, key.ToString(), snap_seq, /*ts=*/nullptr,
-      false /* cache_only */, &snap_checker, min_uncommitted);
+      false /* cache_only */, &snap_checker, min_uncommitted,
+      txn_db_impl_->GetTxnDBOptions().enable_udt_validation);
 }
 
 const std::map<SequenceNumber, size_t>&

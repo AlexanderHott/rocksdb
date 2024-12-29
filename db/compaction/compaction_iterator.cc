@@ -46,8 +46,7 @@ CompactionIterator::CompactionIterator(
           report_detailed_time, expect_valid_internal_key, range_del_agg,
           blob_file_builder, allow_data_in_errors, enforce_single_del_contracts,
           manual_compaction_canceled,
-          std::unique_ptr<CompactionProxy>(
-              compaction ? new RealCompaction(compaction) : nullptr),
+          compaction ? std::make_unique<RealCompaction>(compaction) : nullptr,
           must_count_input_entries, compaction_filter, shutting_down, info_log,
           full_history_ts_low, preserve_time_min_seqno,
           preclude_last_level_min_seqno) {}
@@ -872,8 +871,8 @@ void CompactionIterator::NextFromInput() {
       if (Valid()) {
         at_next_ = true;
       }
-    } else if (last_snapshot == current_user_key_snapshot_ ||
-               (last_snapshot > 0 &&
+    } else if (last_sequence != kMaxSequenceNumber &&
+               (last_snapshot == current_user_key_snapshot_ ||
                 last_snapshot < current_user_key_snapshot_)) {
       // If the earliest snapshot is which this key is visible in
       // is the same as the visibility of a previous instance of the
