@@ -55,12 +55,13 @@ class DbStressListener : public EventListener {
   DbStressListener(const std::string& db_name,
                    const std::vector<DbPath>& db_paths,
                    const std::vector<ColumnFamilyDescriptor>& column_families,
-                   Env* env)
+                   Env* env, SharedState* shared)
       : db_name_(db_name),
         db_paths_(db_paths),
         column_families_(column_families),
         num_pending_file_creations_(0),
-        unique_ids_(db_name, env) {}
+        unique_ids_(db_name, env),
+        shared_(shared) {}
 
   const char* Name() const override { return kClassName(); }
   static const char* kClassName() { return "DBStressListener"; }
@@ -72,15 +73,9 @@ class DbStressListener : public EventListener {
     // pretending doing some work here
     RandomSleep();
     if (fault_fs_guard) {
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kWrite);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataWrite);
+      fault_fs_guard->DisableAllThreadLocalErrorInjection();
     }
+    shared_->SetPersistedSeqno(info.largest_seqno);
   }
 
   void OnFlushBegin(DB* /*db*/,
@@ -180,14 +175,7 @@ class DbStressListener : public EventListener {
 
   void OnSubcompactionCompleted(const SubcompactionJobInfo& /* si */) override {
     if (fault_fs_guard) {
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kWrite);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataWrite);
+      fault_fs_guard->DisableAllThreadLocalErrorInjection();
     }
   }
 
@@ -274,14 +262,7 @@ class DbStressListener : public EventListener {
                             bool* /* auto_recovery */) override {
     RandomSleep();
     if (FLAGS_error_recovery_with_no_fault_injection && fault_fs_guard) {
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kWrite);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataRead);
-      fault_fs_guard->DisableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataWrite);
+      fault_fs_guard->DisableAllThreadLocalErrorInjection();
       // TODO(hx235): only exempt the flush thread during error recovery instead
       // of all the flush threads from error injection
       fault_fs_guard->SetIOActivtiesExcludedFromFaultInjection(
@@ -293,14 +274,7 @@ class DbStressListener : public EventListener {
       const BackgroundErrorRecoveryInfo& /*info*/) override {
     RandomSleep();
     if (FLAGS_error_recovery_with_no_fault_injection && fault_fs_guard) {
-      fault_fs_guard->EnableThreadLocalErrorInjection(
-          FaultInjectionIOType::kRead);
-      fault_fs_guard->EnableThreadLocalErrorInjection(
-          FaultInjectionIOType::kWrite);
-      fault_fs_guard->EnableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataRead);
-      fault_fs_guard->EnableThreadLocalErrorInjection(
-          FaultInjectionIOType::kMetadataWrite);
+      fault_fs_guard->EnableAllThreadLocalErrorInjection();
       fault_fs_guard->SetIOActivtiesExcludedFromFaultInjection({});
     }
   }
@@ -386,6 +360,7 @@ class DbStressListener : public EventListener {
   std::vector<ColumnFamilyDescriptor> column_families_;
   std::atomic<int> num_pending_file_creations_;
   UniqueIdVerifier unique_ids_;
+  SharedState* shared_;
 };
 }  // namespace ROCKSDB_NAMESPACE
 #endif  // GFLAGS

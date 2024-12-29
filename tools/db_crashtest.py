@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import argparse
 import math
@@ -48,7 +47,7 @@ default_params = {
     "charge_filter_construction": lambda: random.choice([0, 1]),
     "charge_table_reader": lambda: random.choice([0, 1]),
     "charge_file_metadata": lambda: random.choice([0, 1]),
-    "checkpoint_one_in": lambda: random.choice([10000, 1000000]),
+    "checkpoint_one_in": lambda: random.choice([0, 0, 10000, 1000000]),
     "compression_type": lambda: random.choice(
         ["none", "snappy", "zlib", "lz4", "lz4hc", "xpress", "zstd"]
     ),
@@ -75,6 +74,7 @@ default_params = {
     "compaction_pri": random.randint(0, 4),
     "key_may_exist_one_in": lambda: random.choice([100, 100000]),
     "data_block_index_type": lambda: random.choice([0, 1]),
+    "decouple_partitioned_filters": lambda: random.choice([0, 1, 1]),
     "delpercent": 4,
     "delrangepercent": 1,
     "destroy_db_initially": 0,
@@ -104,6 +104,7 @@ default_params = {
     # Temporarily disable hash index
     "index_type": lambda: random.choice([0, 0, 0, 2, 2, 3]),
     "ingest_external_file_one_in": lambda: random.choice([1000, 1000000]),
+    "test_ingest_standalone_range_deletion_one_in": lambda: random.choice([0, 5, 10]),
     "iterpercent": 10,
     "lock_wal_one_in": lambda: random.choice([10000, 1000000]),
     "mark_for_compaction_one_file_in": lambda: 10 * random.randint(0, 1),
@@ -130,7 +131,8 @@ default_params = {
     "prefixpercent": 5,
     "progress_reports": 0,
     "readpercent": 45,
-    "recycle_log_file_num": lambda: random.randint(0, 1),
+    # See disabled DBWALTest.RecycleMultipleWalsCrash
+    "recycle_log_file_num": 0,
     "snapshot_hold_ops": 100000,
     "sqfc_name": lambda: random.choice(["foo", "bar"]),
     # 0 = disable writing SstQueryFilters
@@ -207,6 +209,7 @@ default_params = {
     "use_write_buffer_manager": lambda: random.randint(0, 1),
     "avoid_unnecessary_blocking_io": random.randint(0, 1),
     "write_dbid_to_manifest": random.randint(0, 1),
+    "write_identity_file": random.randint(0, 1),
     "avoid_flush_during_recovery": lambda: random.choice(
         [1 if t == 0 else 0 for t in range(0, 8)]
     ),
@@ -338,6 +341,9 @@ default_params = {
     "check_multiget_entity_consistency": lambda: random.choice([0, 0, 0, 1]),
     "use_timed_put_one_in": lambda: random.choice([0] * 7 + [1, 5, 10]),
     "universal_max_read_amp": lambda: random.choice([-1] * 3 + [0, 4, 10]),
+    "paranoid_memory_checks": lambda: random.choice([0] * 7 + [1]),
+    "allow_unprepared_value": lambda: random.choice([0, 1]),
+    "track_and_verify_wals": lambda: random.choice([0, 1]),
 }
 _TEST_DIR_ENV_VAR = "TEST_TMPDIR"
 # If TEST_TMPDIR_EXPECTED is not specified, default value will be TEST_TMPDIR
@@ -440,10 +446,12 @@ blackbox_default_params = {
     "duration": 6000,
     # time for one db_stress instance to run
     "interval": 120,
+    # time for the final verification step
+    "verify_timeout": 1200,
     # since we will be killing anyway, use large value for ops_per_thread
     "ops_per_thread": 100000000,
     "reopen": 0,
-    "set_options_one_in": 10000,
+    "set_options_one_in": 2000,
 }
 
 whitebox_default_params = {
@@ -523,8 +531,10 @@ txn_params = {
     "inplace_update_support": 0,
     # TimedPut is not supported in transaction
     "use_timed_put_one_in": 0,
-    # AttributeGroup not yet supported
-    "use_attribute_group": 0,
+    # txn commit with this option will create a new memtable, keep the
+    # frequency low to reduce stalls
+    "commit_bypass_memtable_one_in": random.choice([0] * 2 + [500, 1000]),
+    "two_write_queues": lambda: random.choice([0, 1]),
 }
 
 # For optimistic transaction db
@@ -538,8 +548,6 @@ optimistic_txn_params = {
     "inplace_update_support": 0,
     # TimedPut is not supported in transaction
     "use_timed_put_one_in": 0,
-    # AttributeGroup not yet supported
-    "use_attribute_group": 0,
 }
 
 best_efforts_recovery_params = {
@@ -590,16 +598,21 @@ ts_params = {
 }
 
 tiered_params = {
-    # Set tiered compaction hot data time as: 1 minute, 1 hour, 10 hour
-    "preclude_last_level_data_seconds": lambda: random.choice([60, 3600, 36000]),
-    # only test universal compaction for now, level has known issue of
-    # endless compaction
-    "compaction_style": 1,
+    # For Leveled/Universal compaction (ignored for FIFO)
+    # Bias toward times that can elapse during a crash test run series
+    "preclude_last_level_data_seconds": lambda: random.choice([10, 60, 1200, 86400]),
+    "last_level_temperature": "kCold",
+    # For FIFO compaction (ignored otherwise)
+    "file_temperature_age_thresholds": lambda: random.choice(
+        [
+            "{{temperature=kWarm;age=30}:{temperature=kCold;age=300}}",
+            "{{temperature=kCold;age=100}}",
+        ]
+    ),
     # tiered storage doesn't support blob db yet
     "enable_blob_files": 0,
     "use_blob_db": 0,
     "default_write_temperature": lambda: random.choice(["kUnknown", "kHot", "kWarm"]),
-    "last_level_temperature": "kCold",
 }
 
 multiops_txn_default_params = {
@@ -666,6 +679,7 @@ multiops_wc_txn_params = {
     "txn_write_policy": 0,
     # TODO re-enable pipelined write. Not well tested atm
     "enable_pipelined_write": 0,
+    "commit_bypass_memtable_one_in": random.choice([0] * 4 + [100]),
 }
 
 multiops_wp_txn_params = {
@@ -777,20 +791,20 @@ def finalize_and_sanitize(src_params):
         # files, which would be problematic when unsynced data can be lost in
         # crash recoveries.
         dest_params["enable_compaction_filter"] = 0
-        # Prefix-recoverability relies on tracing successful user writes.
-        # Currently we trace all user writes regardless of whether it later succeeds or not.
-        # To simplify, we disable any user write failure injection.
-        # TODO(hx235): support tracing user writes with failure injection.
-        # TODO(hx235): support excluding WAL from metadata write fault injection so we don't
-        # have to disable metadata write fault injection to other file
-        dest_params["metadata_write_fault_one_in"] = 0
-        dest_params["exclude_wal_from_write_fault_injection"] = 1
+    # Remove the following once write-prepared/write-unprepared with/without
+    # unordered write supports timestamped snapshots
+    if dest_params.get("create_timestamped_snapshot_one_in", 0) > 0:
+        dest_params["txn_write_policy"] = 0
+        dest_params["unordered_write"] = 0
     # Only under WritePrepared txns, unordered_write would provide the same guarnatees as vanilla rocksdb
     # unordered_write is only enabled with --txn, and txn_params disables inplace_update_support, so
     # setting allow_concurrent_memtable_write=1 won't conflcit with inplace_update_support.
+    # don't overwrite txn_write_policy
     if dest_params.get("unordered_write", 0) == 1:
-        dest_params["txn_write_policy"] = 1
-        dest_params["allow_concurrent_memtable_write"] = 1
+        if dest_params.get("txn_write_policy", 0) == 1:
+            dest_params["allow_concurrent_memtable_write"] = 1
+        else:
+            dest_params["unordered_write"] = 0
     if dest_params.get("disable_wal", 0) == 1:
         dest_params["atomic_flush"] = 1
         dest_params["sync"] = 0
@@ -805,6 +819,12 @@ def finalize_and_sanitize(src_params):
         # now assertion failures are triggered.
         dest_params["compaction_ttl"] = 0
         dest_params["periodic_compaction_seconds"] = 0
+        # Disable irrelevant tiering options
+        dest_params["preclude_last_level_data_seconds"] = 0
+        dest_params["last_level_temperature"] = "kUnknown"
+    else:
+        # Disable irrelevant tiering options
+        dest_params["file_temperature_age_thresholds"] = ""
     if dest_params["partition_filters"] == 1:
         if dest_params["index_type"] != 2:
             dest_params["partition_filters"] = 0
@@ -830,11 +850,6 @@ def finalize_and_sanitize(src_params):
         dest_params["write_fault_one_in"] = 0
         dest_params["skip_verifydb"] = 1
         dest_params["verify_db_one_in"] = 0
-    # Remove the following once write-prepared/write-unprepared with/without
-    # unordered write supports timestamped snapshots
-    if dest_params.get("create_timestamped_snapshot_one_in", 0) > 0:
-        dest_params["txn_write_policy"] = 0
-        dest_params["unordered_write"] = 0
     # For TransactionDB, correctness testing with unsync data loss is currently
     # compatible with only write committed policy
     if dest_params.get("use_txn") == 1 and dest_params.get("txn_write_policy", 0) != 0:
@@ -845,7 +860,9 @@ def finalize_and_sanitize(src_params):
         # WriteCommitted only
         dest_params["use_put_entity_one_in"] = 0
         # MultiCfIterator is currently only compatible with write committed policy
-        dest_params["use_multi_cf_iterator"] = 0        
+        dest_params["use_multi_cf_iterator"] = 0
+        # only works with write committed policy
+        dest_params["commit_bypass_memtable_one_in"] = 0
     # TODO(hx235): enable test_multi_ops_txns with fault injection after stabilizing the CI
     if dest_params.get("test_multi_ops_txns") == 1:
         dest_params["write_fault_one_in"] = 0
@@ -928,16 +945,25 @@ def finalize_and_sanitize(src_params):
         dest_params["prefixpercent"] = 0
         dest_params["check_multiget_consistency"] = 0
         dest_params["check_multiget_entity_consistency"] = 0
-    if dest_params.get("disable_wal") == 0 and dest_params.get("reopen") > 0:
-        # Reopen with WAL currently requires persisting WAL data before closing for reopen.
-        # Previous injected WAL write errors may not be cleared by the time of closing and ready
-        # for persisting WAL.
-        # To simplify, we disable any WAL write error injection.
-        # TODO(hx235): support WAL write error injection with reopen
-        # TODO(hx235): support excluding WAL from metadata write fault injection so we don't
-        # have to disable metadata write fault injection to other file
-        dest_params["exclude_wal_from_write_fault_injection"] = 1
-        dest_params["metadata_write_fault_one_in"] = 0
+    if dest_params.get("disable_wal") == 0:
+        if dest_params.get("reopen") > 0 or (
+            dest_params.get("manual_wal_flush_one_in")
+            and dest_params.get("column_families") != 1
+        ):
+            # Reopen with WAL currently requires persisting WAL data before closing for reopen.
+            # Previous injected WAL write errors may not be cleared by the time of closing and ready
+            # for persisting WAL.
+            # To simplify, we disable any WAL write error injection.
+            # TODO(hx235): support WAL write error injection with reopen
+            # TODO(hx235): support excluding WAL from metadata write fault injection so we don't
+            # have to disable metadata write fault injection to other file
+            #
+            # WAL write failure can drop buffered WAL data. This can cause
+            # inconsistency when one CF has a successful flush during auto
+            # recovery. Disable the fault injection in this path for now until
+            # we have a fix that allows auto recovery.
+            dest_params["exclude_wal_from_write_fault_injection"] = 1
+            dest_params["metadata_write_fault_one_in"] = 0
     if dest_params.get("disable_wal") == 1:
         # disableWAL and recycle_log_file_num options are not mutually
         # compatible at the moment
@@ -958,6 +984,34 @@ def finalize_and_sanitize(src_params):
         and dest_params.get("use_timed_put_one_in") == 1
     ):
         dest_params["use_timed_put_one_in"] = 3
+    if (
+        dest_params.get("write_dbid_to_manifest") == 0
+        and dest_params.get("write_identity_file") == 0
+    ):
+        # At least one must be true
+        dest_params["write_dbid_to_manifest"] = 1
+    # Checkpoint creation skips flush if the WAL is locked, so enabling lock_wal_one_in
+    # can cause checkpoint verification to fail. So make the two mutually exclusive.
+    if dest_params.get("checkpoint_one_in") != 0:
+        dest_params["lock_wal_one_in"] = 0
+    if (
+        dest_params.get("ingest_external_file_one_in") == 0
+        or dest_params.get("delrangepercent") == 0
+    ):
+        dest_params["test_ingest_standalone_range_deletion_one_in"] = 0
+    if dest_params.get("use_txn", 0) == 1 and dest_params.get("commit_bypass_memtable_one_in", 0) > 0:
+        dest_params["enable_blob_files"] = 0
+        dest_params["allow_setting_blob_options_dynamically"] = 0
+        dest_params["atomic_flush"] = 0
+        dest_params["allow_concurrent_memtable_write"] = 0
+        dest_params["use_put_entity_one_in"] = 0
+        dest_params["use_get_entity"] = 0
+        dest_params["use_multi_get_entity"] = 0
+        dest_params["use_merge"] = 0
+        dest_params["use_full_merge_v1"] = 0
+        dest_params["enable_pipelined_write"] = 0
+        dest_params["use_attribute_group"] = 0
+
     return dest_params
 
 
@@ -1004,6 +1058,14 @@ def gen_cmd_params(args):
     ):
         params.update(blob_params)
 
+    if "compaction_style" not in params:
+        # Default to leveled compaction
+        # TODO: Fix "Unsafe to store Seq later" with tiered+leveled and
+        # enable that combination rather than falling back to universal.
+        # TODO: There is also an alleged bug with leveled compaction
+        # infinite looping but that likely would not fail the crash test.
+        params["compaction_style"] = 0 if not args.test_tiered_storage else 1
+
     for k, v in vars(args).items():
         if v is not None:
             params[k] = v
@@ -1015,7 +1077,7 @@ def gen_cmd(params, unknown_params):
     cmd = (
         [stress_cmd]
         + [
-            "--{0}={1}".format(k, v)
+            f"--{k}={v}"
             for k, v in [(k, finalzied_params[k]) for k in sorted(finalzied_params)]
             if k
             not in {
@@ -1036,6 +1098,7 @@ def gen_cmd(params, unknown_params):
                 "cleanup_cmd",
                 "skip_tmpdir_check",
                 "print_stderr_separately",
+                "verify_timeout",
             }
             and v is not None
         ]
@@ -1044,9 +1107,10 @@ def gen_cmd(params, unknown_params):
     return cmd
 
 
-def execute_cmd(cmd, timeout=None):
+def execute_cmd(cmd, timeout=None, timeout_pstack=False):
     child = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     print("Running db_stress with pid=%d: %s\n\n" % (child.pid, " ".join(cmd)))
+    pid = child.pid
 
     try:
         outs, errs = child.communicate(timeout=timeout)
@@ -1054,6 +1118,8 @@ def execute_cmd(cmd, timeout=None):
         print("WARNING: db_stress ended before kill: exitcode=%d\n" % child.returncode)
     except subprocess.TimeoutExpired:
         hit_timeout = True
+        if timeout_pstack:
+            os.system("pstack %d" % pid)
         child.kill()
         print("KILLED %d\n" % child.pid)
         outs, errs = child.communicate()
@@ -1128,7 +1194,9 @@ def blackbox_crash_main(args, unknown_args):
     cmd = gen_cmd(
         dict(list(cmd_params.items()) + list({"db": dbname}.items())), unknown_args
     )
-    hit_timeout, retcode, outs, errs = execute_cmd(cmd)
+    hit_timeout, retcode, outs, errs = execute_cmd(
+        cmd, cmd_params["verify_timeout"], True
+    )
 
     # For the final run
     print_output_and_exit_on_error(outs, errs, args.print_stderr_separately)
@@ -1213,12 +1281,8 @@ def whitebox_crash_main(args, unknown_args):
             # Single level universal has a lot of special logic. Ensure we cover
             # it sometimes.
             if not args.test_tiered_storage and random.randint(0, 1) == 1:
-                additional_opts.update(
-                    {
-                        "num_levels": 1,
-                    }
-                )
-        elif check_mode == 2 and not args.test_tiered_storage:
+                additional_opts["num_levels"] = 1
+        elif check_mode == 2:
             # normal run with FIFO compaction mode
             # ops_per_thread is divided by 5 because FIFO compaction
             # style is quite a bit slower on reads with lot of files
@@ -1227,6 +1291,12 @@ def whitebox_crash_main(args, unknown_args):
                 "ops_per_thread": cmd_params["ops_per_thread"] // 5,
                 "compaction_style": 2,
             }
+            # TODO: test transition from non-FIFO to FIFO with num_levels > 1.
+            # See https://github.com/facebook/rocksdb/pull/10348
+            # For now, tiered storage FIFO (file_temperature_age_thresholds)
+            # requires num_levels == 1 and non-tiered operates that way.
+            if args.test_tiered_storage:
+                additional_opts["num_levels"] = 1
         else:
             # normal run
             additional_opts = {
@@ -1270,7 +1340,7 @@ def whitebox_crash_main(args, unknown_args):
         hit_timeout, retncode, stdoutdata, stderrdata = execute_cmd(
             cmd, exit_time - time.time() + 900
         )
-        msg = "check_mode={0}, kill option={1}, exitcode={2}\n".format(
+        msg = "check_mode={}, kill option={}, exitcode={}\n".format(
             check_mode, additional_opts["kill_random_test"], retncode
         )
 

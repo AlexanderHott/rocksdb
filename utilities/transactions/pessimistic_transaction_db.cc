@@ -20,6 +20,7 @@
 #include "test_util/sync_point.h"
 #include "util/cast_util.h"
 #include "util/mutexlock.h"
+#include "utilities/secondary_index/secondary_index_mixin.h"
 #include "utilities/transactions/pessimistic_transaction.h"
 #include "utilities/transactions/transaction_db_mutex_impl.h"
 #include "utilities/transactions/write_prepared_txn_db.h"
@@ -183,7 +184,12 @@ Transaction* WriteCommittedTxnDB::BeginTransaction(
     ReinitializeTransaction(old_txn, write_options, txn_options);
     return old_txn;
   } else {
-    return new WriteCommittedTxn(this, write_options, txn_options);
+    if (!txn_db_options_.secondary_indices.empty()) {
+      return new SecondaryIndexMixin<WriteCommittedTxn>(
+          &txn_db_options_.secondary_indices, this, write_options, txn_options);
+    } else {
+      return new WriteCommittedTxn(this, write_options, txn_options);
+    }
   }
 }
 
@@ -723,6 +729,11 @@ void PessimisticTransactionDB::ReinitializeTransaction(
 Transaction* PessimisticTransactionDB::GetTransactionByName(
     const TransactionName& name) {
   std::lock_guard<std::mutex> lock(name_map_mutex_);
+  return GetTransactionByNameLocked(name);
+}
+
+Transaction* PessimisticTransactionDB::GetTransactionByNameLocked(
+    const TransactionName& name) {
   auto it = transactions_.find(name);
   if (it == transactions_.end()) {
     return nullptr;
@@ -755,13 +766,15 @@ void PessimisticTransactionDB::SetDeadlockInfoBufferSize(uint32_t target_size) {
   lock_manager_->Resize(target_size);
 }
 
-void PessimisticTransactionDB::RegisterTransaction(Transaction* txn) {
+Status PessimisticTransactionDB::RegisterTransaction(Transaction* txn) {
   assert(txn);
   assert(txn->GetName().length() > 0);
-  assert(GetTransactionByName(txn->GetName()) == nullptr);
   assert(txn->GetState() == Transaction::STARTED);
   std::lock_guard<std::mutex> lock(name_map_mutex_);
-  transactions_[txn->GetName()] = txn;
+  if (!transactions_.insert({txn->GetName(), txn}).second) {
+    return Status::InvalidArgument("Duplicate txn name " + txn->GetName());
+  }
+  return Status::OK();
 }
 
 void PessimisticTransactionDB::UnregisterTransaction(Transaction* txn) {

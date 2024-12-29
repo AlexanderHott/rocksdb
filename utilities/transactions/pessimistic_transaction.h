@@ -122,13 +122,6 @@ class PessimisticTransaction : public TransactionBaseImpl {
                      ColumnFamilyHandle* column_family = nullptr) override;
 
  protected:
-  // Refer to
-  // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
-  bool use_only_the_last_commit_time_batch_for_recovery_ = false;
-  // Refer to
-  // TransactionOptions::skip_prepare
-  bool skip_prepare_ = false;
-
   virtual Status PrepareInternal() = 0;
 
   virtual Status CommitWithoutPrepareInternal() = 0;
@@ -166,6 +159,16 @@ class PessimisticTransaction : public TransactionBaseImpl {
   // performed blind writes or Get, though.
   TxnTimestamp read_timestamp_{kMaxTxnTimestamp};
   TxnTimestamp commit_timestamp_{kMaxTxnTimestamp};
+
+  // Refer to
+  // TransactionOptions::use_only_the_last_commit_time_batch_for_recovery
+  bool use_only_the_last_commit_time_batch_for_recovery_ = false;
+  // Refer to
+  // TransactionOptions::skip_prepare
+  bool skip_prepare_ = false;
+  // Refer to
+  // TransactionOptions::commit_bypass_memtable
+  bool commit_bypass_memtable_ = false;
 
  private:
   friend class TransactionTest_ValidateSnapshotTest_Test;
@@ -304,6 +307,10 @@ class WriteCommittedTxn : public PessimisticTransaction {
   Status SetCommitTimestamp(TxnTimestamp ts) override;
   TxnTimestamp GetCommitTimestamp() const override { return commit_timestamp_; }
 
+  bool GetCommitBypassMemTable() const override {
+    return commit_bypass_memtable_;
+  }
+
  private:
   template <typename TValue>
   Status GetForUpdateImpl(const ReadOptions& read_options,
@@ -329,6 +336,11 @@ class WriteCommittedTxn : public PessimisticTransaction {
   Status CommitInternal() override;
 
   Status RollbackInternal() override;
+
+  // Checks if the combination of `do_validate`, the read timestamp set in
+  // `read_timestamp_` and the `enable_udt_validation` flag in
+  // TransactionDBOptions make sense together.
+  Status SanityCheckReadTimestamp(bool do_validate);
 
   // Column families that enable timestamps and whose data are written when
   // indexing_enabled_ is false. If a key is written when indexing_enabled_ is
