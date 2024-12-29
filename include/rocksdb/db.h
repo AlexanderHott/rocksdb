@@ -174,7 +174,7 @@ using TablePropertiesCollection =
 // and a number of wrapper implementations.
 class DB {
  public:
-  /// Must be syncronized via the `memtable_factory_mutex_` member variable.
+  /// Must be synchronized via the `memtable_factory_mutex_` member variable.
   std::shared_ptr<MemTableRepFactory> memtable_factory_;
   mutable std::shared_mutex memtable_factory_mutex_;
 
