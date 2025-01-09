@@ -728,6 +728,7 @@ set(SOURCES
         db/repair.cc
         db/seqno_to_time_mapping.cc
         db/snapshot_impl.cc
+        db/stats_collector.cc
         db/table_cache.cc
         db/table_properties_collector.cc
         db/transaction_log_impl.cc

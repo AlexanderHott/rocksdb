@@ -105,6 +105,7 @@ struct MutableCFOptions {
   static const char* kName() { return "MutableCFOptions"; }
   explicit MutableCFOptions(const ColumnFamilyOptions& options)
       : write_buffer_size(options.write_buffer_size),
+        dynamic_memtable(options.dynamic_memtable),
         max_write_buffer_number(options.max_write_buffer_number),
         arena_block_size(options.arena_block_size),
         memtable_prefix_bloom_size_ratio(
@@ -251,6 +252,7 @@ struct MutableCFOptions {
 
   // Memtable related options
   size_t write_buffer_size;
+  bool dynamic_memtable;
   int max_write_buffer_number;
   size_t arena_block_size;
   double memtable_prefix_bloom_size_ratio;

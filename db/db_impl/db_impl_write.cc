@@ -2127,8 +2127,7 @@ Status DBImpl::DelayWrite(uint64_t num_bytes, WriteThread& write_thread,
 
       // Notify write_thread about the stall so it can setup a barrier and
       // fail any pending writers with no_slowdown
-      write_thread.BeginWriteStall();
-      mutex_.Unlock();
+      write_thread.BeginWriteStall(); mutex_.Unlock();
       TEST_SYNC_POINT("DBImpl::DelayWrite:BeginWriteStallDone");
       // We will delay the write until we have slept for `delay` microseconds
       // or we don't need a delay anymore. We check for cancellation every 1ms
@@ -2465,6 +2464,14 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context,
       s = io_s;
     }
   }
+
+  // LOG("Setting new memtable size to 1048576 bytes");
+  // SetOptions({
+  //         {"write_buffer_size", "1048576"},
+  //     }
+  // );
+
+
   if (s.ok()) {
     // FIXME: from the comment for GetEarliestSequenceNumber(), any key with
     //  seqno >= earliest_seqno should be in this or later memtable. This means
@@ -2478,17 +2485,56 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context,
     } else {
       seq = versions_->LastSequence();
     }
-    new_mem =
-        cfd->ConstructNewMemtable(mutable_cf_options, /*earliest_seq=*/seq);
-    SequenceNumber seq = versions_->LastSequence();
 
-    this->memtable_factory_mutex_.lock_shared();
-    std::optional<MemTableRepFactory*> memtable_factory = this->memtable_factory_ != nullptr
-    ? std::optional(this->memtable_factory_.get())
-      : std::nullopt;
-    LOG("[SwitchMemtable] " << this->memtable_factory_->Name());
-    new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq, memtable_factory);
-    this->memtable_factory_mutex_.unlock_shared();
+
+    std::optional<MemTableRepFactory*> memtable_factory = std::nullopt;
+    mutex_.Lock();
+    bool dynamic_memtable = mutable_cf_options.dynamic_memtable;
+    mutex_.Unlock();
+
+    if (dynamic_memtable) {
+      std::string stats_str = this->stats_collector_->stats_string();
+      LOG("Sending stats str " << stats_str);
+      zmq::message_t stats_msg(stats_str.data(), stats_str.size());
+      this->zmq_socket_->send(stats_msg, zmq::send_flags::none);
+
+      zmq::message_t memtable_msg;
+      zmq::recv_result_t memtable_msg_result = this->zmq_socket_->recv(memtable_msg, zmq::recv_flags::none);
+      if (!memtable_msg_result.has_value()) {
+        LOG("Failed to receive memtable message");
+      }
+      std::string memtable_str(static_cast<char *>(memtable_msg.data()), memtable_msg.size());
+      LOG("Got " << memtable_str);
+
+      size_t semi_idx = memtable_str.find(';');
+      std::string memtable = memtable_str.substr(0, semi_idx);
+
+      std::string memtable_config = memtable_str.substr(semi_idx + 1);
+      SetOptions({
+              {"write_buffer_size", memtable_config},
+          }
+      );
+      if (memtable == "vector") {
+        memtable_factory = new VectorRepFactory();
+      } else if (memtable == "skiplist") {
+        memtable_factory = new SkipListFactory();
+      } else if (memtable == "hash-linklist") {
+        memtable_factory = NewHashLinkListRepFactory();
+      } else if (memtable == "hash-skiplist") {
+        memtable_factory = NewHashSkipListRepFactory();
+      }
+    }
+
+    new_mem =
+        cfd->ConstructNewMemtable(mutable_cf_options, /*earliest_seq=*/seq, memtable_factory);
+
+    // this->memtable_factory_mutex_.lock_shared();
+    // std::optional<MemTableRepFactory*> memtable_factory = this->memtable_factory_ != nullptr
+    // ? std::optional(this->memtable_factory_.get())
+    //   : std::nullopt;
+    // LOG("[SwitchMemtable] " << this->memtable_factory_->Name());
+    // new_mem = cfd->ConstructNewMemtable(mutable_cf_options, seq, memtable_factory);
+    // this->memtable_factory_mutex_.unlock_shared();
 
     context->superversion_context.NewSuperVersion();
 
@@ -2649,6 +2695,7 @@ Status DBImpl::SwitchMemtable(ColumnFamilyData* cfd, WriteContext* context,
 
   // Notify client that memtable is sealed, now that we have successfully
   // installed a new memtable
+
   NotifyOnMemTableSealed(cfd, memtable_info);
   // It is possible that we got here without checking the value of i_os, but
   // that is okay.  If we did, it most likely means that s was already an error.

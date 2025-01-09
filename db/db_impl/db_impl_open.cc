@@ -2625,6 +2625,10 @@ Status DBImpl::Open(const DBOptions& db_options, const std::string& dbname,
     delete impl;
     *dbptr = nullptr;
   }
+  impl->stats_collector_ = std::make_shared<StatsCollector>();
+  impl->zmq_context_ =  zmq::context_t();
+  impl->zmq_socket_ = std::make_shared<zmq::socket_t>(impl->zmq_context_, zmq::socket_type::pair);
+  impl->zmq_socket_->bind("ipc:///tmp/rocksdb-memtable-switching-ipc");
   return s;
 }
 }  // namespace ROCKSDB_NAMESPACE

@@ -185,6 +185,8 @@ struct ColumnFamilyOptions : public AdvancedColumnFamilyOptions {
   // Dynamically changeable through SetOptions() API
   size_t write_buffer_size = 64 << 20;
 
+  bool dynamic_memtable = false;
+
   // Compress blocks using the specified compression algorithm.
   //
   // Default: kSnappyCompression, if it's supported. If snappy is not linked

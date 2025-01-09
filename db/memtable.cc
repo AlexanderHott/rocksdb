@@ -131,6 +131,7 @@ MemTable::MemTable(const InternalKeyComparator& cmp,
     comparator_, &arena_, mutable_cf_options.prefix_extractor.get(),
     ioptions.logger, column_family_id)
   );
+  // TODO: should we delete mtrf?
   UpdateFlushState();
   // something went wrong if we need to flush before inserting anything
   assert(!ShouldScheduleFlush());

@@ -33,6 +33,9 @@
 #include "rocksdb/utilities/table_properties_collectors.h"
 #include "rocksdb/version.h"
 #include "rocksdb/wide_columns.h"
+#include "rocksdb/stats_collector.h"
+
+#include <zmq.hpp>
 
 #ifdef _WIN32
 // Windows API macro interference
@@ -175,9 +178,13 @@ using TablePropertiesCollection =
 // and a number of wrapper implementations.
 class DB {
  public:
+  // TODO: [MTS] fix doc comments
   /// Must be synchronized via the `memtable_factory_mutex_` member variable.
-  std::shared_ptr<MemTableRepFactory> memtable_factory_;
-  mutable std::shared_mutex memtable_factory_mutex_;
+  zmq::context_t zmq_context_;
+  std::shared_ptr<zmq::socket_t> zmq_socket_;
+  std::shared_ptr<StatsCollector> stats_collector_;
+  // std::shared_ptr<MemTableRepFactory> memtable_factory_;
+  // mutable std::shared_mutex memtable_factory_mutex_;
 
   // Open the database with the specified "name" for reads and writes.
   // Stores a pointer to a heap-allocated database in *dbptr and returns
