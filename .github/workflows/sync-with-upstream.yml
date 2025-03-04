@@ -1,0 +1,55 @@
+# Sync upstream facebook/rocksdb if the build is successful and all the tests pass
+name: Sync With Upstream
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sync-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v3
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream remote
+        run: |
+          git fetch upstream
+
+      - name: Merge upstream changes
+        run: |
+          git checkout -b temp-merge-branch
+          git merge upstream/main --no-commit --no-ff
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential libgtest-dev
+
+      - name: Build project
+        run: |
+          mkdir -p build
+          cd build
+          cmake -DWITH_TESTS=ON -DWITH_ALL_TESTS=ON ..
+          cmake --build . --target db_test  -- -j$(nproc)
+
+      - name: Run tests
+        run: |
+          cd build
+          ./db_test --gtest_filter=-DBTest.PurgeInfoLogs
+
+      - name: Push changes to main
+        if: success()
+        run: |
+          git checkout main
+          git merge temp-merge-branch --no-ff -m "Automated merge from upstream"
+          git push origin main
+
+      - name: Clean up
+        run: |
+          git branch -D temp-merge-branch
