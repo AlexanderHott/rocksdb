@@ -19,6 +19,7 @@ jobs:
 
       - name: Fetch upstream remote
         run: |
+          git remote add upstream https://github.com/facebook/rocksdb.git
           git fetch upstream
 
       - name: Merge upstream changes
